@@ -51,19 +51,17 @@ contract StakingPoolManager is IStakingPoolManager, AccessControlUpgradeable {
         emit PoolRemoved(_pool);
     }
 
-    function stake() external onlyRole(AMTConstants.ADMIN_ROLE) {
-        require(pools.length() > 0, "StakingPoolManager: no pools");
-        uint256 _amount = IERC20(l1Token).balanceOf(address(this));
+    function stake(address _pool, uint256 _amount) external onlyRole(AMTConstants.ADMIN_ROLE) {
+        require(pools.contains(_pool), "StakingPoolManager: pool not exists");
         if (_amount == 0) {
             return;
         }
-        // TODO: choose a pool to stake
-        IStakingPool _stakingPool = IStakingPool(pools.at(pools.length() - 1));
+        IStakingPool _stakingPool = IStakingPool(_pool);
         require(_stakingPool.canStake(_amount), "StakingPoolManager: cannot stake");
 
-        IERC20(l1Token).safeApprove(address(_stakingPool), _amount);
+        IERC20(l1Token).safeApprove(_pool, _amount);
         _stakingPool.increaseStakingAmount(_amount);
-        emit StakingAmountIncreased(address(_stakingPool), _amount);
+        emit StakingAmountIncreased(_pool, _amount);
     }
 
     function claimRewards() external onlyRole(AMTConstants.ADMIN_ROLE) {

@@ -13,7 +13,7 @@ interface IStakingPoolManager {
 
     function removePool(address _pool) external;
 
-    function stake() external;
+    function stake(address _pool, uint256 amount) external;
 
     function claimRewards() external;
 }
