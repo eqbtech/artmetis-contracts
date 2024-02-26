@@ -86,10 +86,16 @@ contract StakingPool is IStakingPool, AccessControlUpgradeable {
     }
 
     function stakingAmount() public view returns (uint256) {
+        if (sequencerId == 0) {
+            return 0;
+        }
         return lockingPool.sequencerLock(sequencerId);
     }
 
     function canStake(uint256 _amount) public view returns (bool) {
+        if (sequencerId == 0) {
+            return false;
+        }
         return _amount + lockingPool.sequencerLock(sequencerId) <= lockingPool.maxLock();
     }
 }
