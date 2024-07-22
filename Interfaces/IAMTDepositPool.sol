@@ -13,7 +13,15 @@ interface IAMTDepositPool {
 
     function harvest() external;
 
-    function bridgeMetisToL1() external;
+    function bridgeMetisToL1(uint32 l1Gas) external payable;
+
+    function adminWithdrawMetis(uint256 _amount) external;
+
+    function initiateWithdrawalFor(
+        address _user,
+        uint256 _artMetisAmount,
+        uint256 _depositAmount
+    ) external;
 
     event MetisDeposited(
         address indexed _user,
@@ -23,4 +31,10 @@ interface IAMTDepositPool {
     );
     event Harvested(address indexed _user, uint256 _amount);
     event BridgeMetisToL1(address indexed _user, uint256 _amount);
+    event AdminWithdrawnMetis(address indexed _user, uint256 _amount);
+    event InitiateWithdrawalFor(
+        address indexed _user,
+        uint256 _artMetisAmount,
+        uint256 _depositAmount
+    );
 }

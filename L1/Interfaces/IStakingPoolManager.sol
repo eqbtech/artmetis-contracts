@@ -6,6 +6,7 @@ interface IStakingPoolManager {
     event PoolRemoved(address indexed _pool);
     event SequencerBound(address indexed _pool, address indexed _signer, uint256 _amount, bytes _signerPubKey);
     event StakingAmountIncreased(address indexed _pool, uint256 _amount);
+    event StakingAmountWithdrawn(address indexed _pool, address indexed _recipient, uint256 _amount);
 
     function addPool(address _pool) external;
 
@@ -13,7 +14,9 @@ interface IStakingPoolManager {
 
     function removePool(address _pool) external;
 
-    function stake(address _pool, uint256 amount) external;
+    function stake(address _pool, uint256 _amount) external;
 
-    function claimRewards() external;
+    function withdraw(address _pool, address _recipient, uint256 _amount) external;
+
+    function claimRewards(uint32 _l2GasLimit) external payable;
 }

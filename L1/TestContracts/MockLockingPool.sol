@@ -1,422 +1,538 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+
+import "../Interfaces/Metis/ILockingInfo.sol";
 import "../Interfaces/Metis/ILockingPool.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract MockLockingPool is ILockingPool {
-    using SafeERC20 for IERC20;
+import "./MockSequencerInfo.sol";
 
-    enum Status {Inactive, Active, Unlocked}  // Unlocked means sequencer exist
-
-    struct MpcHistoryItem {
-        uint256 startBlock;
-        address newMpcAddress;
+contract MockLockingPool is PausableUpgradeable, ILockingPool, MockSequencerInfo {
+    struct BatchState {
+        uint256 id; // current batch id
+        uint256 number; // L1 block number when current batch is submitted
+        uint256 startEpoch; // start epoch number for current batch
+        uint256 endEpoch; // end epoch number for current batch
     }
 
-    struct State {
-        uint256 amount;
-        uint256 lockerCount;
-    }
+    ILockingInfo public escrowRename;
 
-    struct StateChange {
-        int256 amount;
-        int256 lockerCount;
-    }
+    // delay time for unlock
+    uint256 public exitDelayPeriod;
 
-    struct Sequencer {
-        uint256 amount;             // sequencer current lock amount
-        uint256 reward;             // sequencer current reward
-        uint256 activationBatch;    // sequencer activation batch id
-        uint256 deactivationBatch;  // sequencer deactivation batch id
-        uint256 deactivationTime;   // sequencer deactivation timestamp
-        uint256 unlockClaimTime;    // sequencer unlock lock amount timestamp, has a withdraw delay time
-        address signer;             // sequencer signer address
-        address rewardRecipient;    // seqeuncer rewarder recipient address
-        Status status;              // sequencer status
-    }
+    // reward per L2 block
+    uint256 public rewardPerBlock;
 
-    uint256 internal constant INCORRECT_SEQUENCER_ID = 2**256 - 1;
+    // the mpc address
+    address public mpcAddress;
 
-    address public bridge;     // L1 metis bridge address
-    address public l1Token;    // L1 metis token address
-    address public l2Token;    // L2 metis token address
-    address public NFTContract;  // NFT for locker
-    uint256 public WITHDRAWAL_DELAY;    // delay time for unlock
-    uint256 public currentBatch;    // current batch id
-    uint256 public totalLocked;     // total locked amount of all sequencers
-    uint256 public counter;      // current count
-    uint256 public totalRewardsLiquidated; // total rewards had been liquidated
-    uint256 public currentUnlockedInit; // sequencer unlock queue count, need have a limit
-    uint256 public lastRewardEpochId; // the last epochId for update reward
-    uint256 public lastRewardTime; // the last reward time for update reward
+    // current batch state
+    BatchState public curBatchState;
 
-    // genesis variables
-    uint256 public perSecondReward; // reward per second
-    uint256 public minLock; // min lock Metis token
-    uint256 public maxLock; // max lock Metis token
-    uint256 public signerUpdateLimit; // sequencer signer need have a update limit,how many batches are not allowed to update the signer
-    address public mpcAddress; // current mpc address for batch submit reward
-    uint256 public sequencerThreshold; // maximum sequencer limit
+    // the number of batch that signer can be updated since the last update
+    uint256 public signerUpdateThrottle;
 
-    mapping(uint256 => Sequencer) public sequencers;
-    mapping(address => uint256) public signerToSequencer;
-    mapping(uint256 => bool) public batchSubmitHistory;   // batch submit
+    constructor(address _escrow) {
+        exitDelayPeriod = 21 days;
+        rewardPerBlock = 761000 gwei;
 
-    // current Batch lock power and lockers count
-    State public sequencerState;
-    mapping(uint256 => StateChange) public sequencerStateChanges;
+        // init batch state, default starts from 1
+        curBatchState = BatchState({
+            id: 1,
+            number: block.number,
+            startEpoch: 0,
+            endEpoch: 0
+        });
 
-    // sequencerId to last signer update Batch
-    mapping(uint256 => uint256) public latestSignerUpdateBatch;
+        escrowRename = ILockingInfo(_escrow);
 
-    // white address list who can lock token
-    mapping(address => bool) public whiteListAddresses;
-    // A whitelist address can only be bound to one sequencer
-    mapping(address => address) public whiteListBoundSequencer;
-
-    // mpc history
-    MpcHistoryItem[] public mpcHistory; // recent mpc
-
-    constructor(
-        address _l1Token
-    ) {
-        require(_l1Token != address(0),"invalid _l1Token");
-
-        l1Token = _l1Token;
-
-        WITHDRAWAL_DELAY = 21 days; // sequencer exit withdraw delay time
-        currentBatch = 1;  // default start from batch 1
-        perSecondReward = 1 * (10**8); // per second reward
-        minLock = 20000* (10**18);  // min lock amount
-        maxLock = 100000 * (10**18); // max lock amount
-        signerUpdateLimit = 10; // how many batches are not allowed to update the signer
-        sequencerThreshold = 10; // allow max sequencers
-        counter = 1; // sequencer id
+        signerUpdateThrottle = 1;
     }
 
     /**
-        Admin Methods
+     * @dev currentBatch returns current batch id
      */
+    function currentBatch() external view returns (uint256) {
+        return curBatchState.id;
+    }
+
+    /**
+     * @dev WITHDRAWAL_DELAY returns the period
+     *      just for compatibility, this ambiguous func is added
+     */
+    function WITHDRAWAL_DELAY() external view returns (uint256) {
+        return exitDelayPeriod;
+    }
+
+    /**
+     * @dev BLOCK_REWARD returns the current reward per block
+     *      just for compatibility, this ambiguous func is added
+     */
+    function BLOCK_REWARD() external view returns (uint256) {
+        return rewardPerBlock;
+    }
+
+    /**
+     * @dev updateMpc update the mpc address
+     * @param _newMpc new mpc address
+     */
+    function updateMpc(address _newMpc) external onlyOwner {
+        mpcAddress = _newMpc;
+        emit UpdateMpc(_newMpc);
+    }
+
+    /**
+     * @dev setPause
+     * @param _yes pause or not
+     */
+    function setPause(bool _yes) external onlyOwner {
+        if (_yes) {
+            _pause();
+        } else {
+            _unpause();
+        }
+    }
+
+    /**
+     *  @dev updateWithdrawDelayTimeValue Allow owner to set withdraw delay time.
+     *  @param _time new withdraw delay time
+     */
+    function updateWithdrawDelayTimeValue(uint256 _time) external onlyOwner {
+        require(_time > 0, "dalayTime==0");
+        uint256 pre = exitDelayPeriod;
+        exitDelayPeriod = _time;
+        emit WithrawDelayTimeChange(_time, pre);
+    }
+
+    /**
+     * @dev updateBlockReward  Allow owner to set per block reward
+     * @param newReward the block reward
+     */
+    function updateBlockReward(uint256 newReward) external onlyOwner {
+        require(newReward != 0, "invalid newReward");
+        uint256 pre = rewardPerBlock;
+        rewardPerBlock = newReward;
+        emit RewardUpdate(newReward, pre);
+    }
+
+    /**
+     * @dev setSignerUpdateThrottle  set signerUpdateThrottle
+     * @param _n the new value of the throttle, it can be 0
+     */
+    function setSignerUpdateThrottle(uint256 _n) external onlyOwner {
+        signerUpdateThrottle = _n;
+        emit SetSignerUpdateThrottle(_n);
+    }
+
+    /**
+     * @dev updateSigner sqeuencer signer can update signer address
+     *      Note: only signer can use this, the sequencer owner doesn't have access
+     * @param _seqId the sequencer id
+     * @param _signerPubkey the new signer pubkey address
+     */
+    function updateSigner(
+        uint256 _seqId,
+        bytes calldata _signerPubkey
+    ) external whenNotPaused {
+        Sequencer storage seq = sequencers[_seqId];
+        if (seq.status != Status.Active) {
+            revert SeqNotActive();
+        }
+
+        // can be updated by the signer
+        address signer = seq.signer;
+        if (signer != msg.sender) {
+            revert NotSeqSigner();
+        }
+
+        require(
+            curBatchState.id >= seq.updatedBatch + signerUpdateThrottle,
+            "signer updating throttle"
+        );
+
+        address newSigner = _getAddrByPubkey(_signerPubkey);
+        // the new signer should not be a signer before
+        if (seqSigners[newSigner] != 0) {
+            revert SignerExisted();
+        }
+        seq.pubkey = _signerPubkey;
+
+        seq.signer = newSigner;
+        seqSigners[newSigner] = _seqId;
+
+        // the previous signer address can'be used again
+        _invalidSignerAddress(signer);
+
+        // set signer updated batch id
+        seq.updatedBatch = curBatchState.id;
+
+        uint256 nonce = seq.nonce + 1;
+        seq.nonce = nonce;
+        // the event emits in LocingInfo is just for compatibility
+        escrowRename.logSignerChange(_seqId, signer, newSigner, nonce, _signerPubkey);
+    }
+
+    /**
+     * @dev lockFor lock Metis and participate in the sequencer node
+     *      the msg.sender will be owner of the sequencer
+     *      the owner has abilities to leverage lock/relock/unlock/cliam
+     *      **Note**: the locking amount will be trasnfered from msg.sender
+     *      and you need to approve the Metis of msg.sender to **LockingInfo** contract
+     *      instead of this LockingPool contract
+     *
+     *      the default reward recipient is an empty address
+     *      you need to update it using setSequencerRewardRecipient afterward
+     * @param _signer Sequencer signer address
+     * @param _amount Amount of L1 metis token to lock for.
+     * @param _signerPubkey Sequencer signer pubkey, it should be uncompressed
+     */
+    function lockFor(
+        address _signer,
+        uint256 _amount,
+        bytes calldata _signerPubkey
+    ) external whenNotPaused whitelistRequired {
+        uint256 batchId = curBatchState.id;
+        address owner = msg.sender;
+        uint256 seqId = _lockFor(
+            batchId,
+            owner,
+            _signer,
+            _signerPubkey,
+            _amount,
+            address(0)
+        );
+        escrowRename.newSequencer(
+            seqId,
+            owner,
+            _signer,
+            _amount,
+            batchId,
+            _signerPubkey
+        );
+        emit SequencerOwnerChanged(seqId, owner);
+        emit SequencerRewardRecipientChanged(seqId, address(0));
+    }
+
+    /**
+     * @dev lockWithRewardRecipient is the same with lockFor, but you can provide a reward receipent
+     * @param _signer Sequencer signer address
+     * @param _rewardRecipient Sequencer reward receiptent
+     *        you can use an empty address if you haven't choosed an address
+     *        and update it using `setSequencerRewardRecipient` after then
+     * @param _amount Amount of L1 metis token to lock for.
+     * @param _signerPubkey Sequencer signer pubkey
+     *         it should be uncompressed and matched with signer address
+     */
+    function lockWithRewardRecipient(
+        address _signer,
+        address _rewardRecipient,
+        uint256 _amount,
+        bytes calldata _signerPubkey
+    ) external whenNotPaused whitelistRequired {
+        uint256 batchId = curBatchState.id;
+        address owner = msg.sender;
+        uint256 seqId = _lockFor(
+            batchId,
+            owner,
+            _signer,
+            _signerPubkey,
+            _amount,
+            _rewardRecipient
+        );
+        escrowRename.newSequencer(
+            seqId,
+            owner,
+            _signer,
+            _amount,
+            batchId,
+            _signerPubkey
+        );
+        emit SequencerOwnerChanged(seqId, owner);
+        emit SequencerRewardRecipientChanged(seqId, _rewardRecipient);
+    }
+
+    /**
+     * @dev relock allow sequencer operator to increase the amount of locked positions
+     * @param _seqId the id of your sequencer
+     * @param _amount amount of token to relock, it can be 0 if you want to relock your rewrad
+     * @param _lockReward use true if lock the current rewards
+     */
+    function relock(
+        uint256 _seqId,
+        uint256 _amount,
+        bool _lockReward
+    ) external whenNotPaused whitelistRequired {
+        Sequencer storage seq = sequencers[_seqId];
+        if (seq.status != Status.Active) {
+            revert SeqNotActive();
+        }
+
+        if (seq.owner != msg.sender) {
+            revert NotSeqOwner();
+        }
+
+        uint256 _fromReward = 0;
+        if (_lockReward) {
+            _fromReward = seq.reward;
+            seq.reward = 0;
+        }
+
+        uint256 locked = seq.amount + _amount + _fromReward;
+        uint256 nonce = seq.nonce + 1;
+
+        seq.nonce = nonce;
+        seq.amount = locked;
+
+        escrowRename.increaseLocked(
+            _seqId,
+            nonce,
+            msg.sender,
+            locked,
+            _amount,
+            _fromReward
+        );
+    }
+
+    /**
+     * @dev unlock your metis and exit the sequencer node
+     *      the reward will be arrived by L1Bridge first
+     *      and you need to wait the exit period and call
+     *      unlockClaim to cliam your locked token
+     * @param _seqId sequencer id
+     * @param _l2Gas the L2 gas limit for L1Bridge.
+     *       the reward is distributed by bridge
+     *       so you need to pay the ETH as the bridge fee
+     */
+    function unlock(
+        uint256 _seqId,
+        uint32 _l2Gas
+    ) external payable whenNotPaused whitelistRequired {
+        _unlock(_seqId, false, _l2Gas);
+    }
 
     /**
      * @dev forceUnlock Allow owner to force a sequencer node to exit
-     * @param sequencerId unique integer to identify a sequencer.
-     * @param l2Gas bridge reward to L2 gasLimit
+     * @param _seqId the sequencer id
+     * @param _l2Gas l2 gas limit, see above for the detail
      */
-    function forceUnlock(uint256 sequencerId,uint32 l2Gas) external {
+    function forceUnlock(
+        uint256 _seqId,
+        uint32 _l2Gas
+    ) external payable onlyOwner {
+        _unlock(_seqId, true, _l2Gas);
     }
 
     /**
-    * @dev setWhiteListAddress Allow owner to update white address list
-     * @param user the address who can lock token
-     * @param verified white address state
-     */
-    function setWhiteListAddress(address user, bool verified) external {
-        require(whiteListAddresses[user] != verified, "state not change");
-        whiteListAddresses[user] = verified;
-    }
-
-    /**
-    * @dev lockFor is used to lock Metis and participate in the sequencer block node application
-     * @param user sequencer signer address
-     * @param amount Amount of L1 metis token to lock for.
-     * @param signerPubkey sequencer signer pubkey
-     */
-    function lockFor(
-        address user,
-        uint256 amount,
-        bytes memory signerPubkey
-    ) override external {
-        require(whiteListAddresses[msg.sender],"msg sender should be in the white list");
-        require(amount >= minLock, "amount less than minLock");
-        require(amount <= maxLock, "amount large than maxLock");
-        require(whiteListBoundSequencer[msg.sender] == address(0), "had bound sequencer");
-
-        _lockFor(user, amount, signerPubkey);
-        whiteListBoundSequencer[msg.sender] = user;
-        _transferTokenFrom(msg.sender, address(this), amount);
-    }
-
-
-    /**
-    * @dev unlock is used to unlock Metis and exit the sequencer node
+     * @dev unlockClaim claim your locked tokens after the waiting period is passed
+     *      l2 fee is required if you have unclaimed reward
      *
-     * @param sequencerId sequencer id
-     * @param l2Gas bridge reward to L2 gasLimit
+     * @param _seqId sequencer id
+     * @param _l2Gas l2 gas limit
      */
-    function unlock(uint256 sequencerId, uint32 l2Gas) override external payable {
-    }
-
-
-    /**
-    * @dev unlockClaim Because unlock has a waiting period, after the waiting period is over, you can claim locked tokens
-     *
-     * @param sequencerId sequencer id
-     * @param l2Gas bridge reward to L2 gasLimit
-     */
-    function unlockClaim(uint256 sequencerId, uint32 l2Gas) override external payable {
-    }
-
-    /**
-     * @dev relock Allow sequencer to increase the amount of locked positions
-     * @param sequencerId unique integer to identify a sequencer.
-     * @param amount Amount of L1 metis token to relock for.
-     * @param lockRewards Whether to lock the current rewards
-     */
-    function relock(
-        uint256 sequencerId,
-        uint256 amount,
-        bool lockRewards
-    ) override external {
-        require(sequencers[sequencerId].amount > 0,"invalid sequencer locked amount");
-        require(sequencers[sequencerId].deactivationBatch == 0, "no relocking");
-        require(whiteListAddresses[msg.sender],"msg sender should be in the white list");
-        require(whiteListBoundSequencer[msg.sender] == sequencers[sequencerId].signer,"whiteAddress and boundSequencer mismatch");
-
-        uint256 relockAmount = amount;
-
-        if (lockRewards) {
-            amount = amount + sequencers[sequencerId].reward;
-            sequencers[sequencerId].reward = 0;
+    function unlockClaim(
+        uint256 _seqId,
+        uint32 _l2Gas
+    ) external payable whenNotPaused whitelistRequired {
+        Sequencer storage seq = sequencers[_seqId];
+        if (seq.owner != msg.sender) {
+            revert NotSeqOwner();
         }
-        require(amount > 0,"invalid relock amount");
 
-        totalLocked = totalLocked + amount;
-        sequencers[sequencerId].amount = sequencers[sequencerId].amount + amount;
-        require(sequencers[sequencerId].amount <= maxLock, "amount large than maxLock");
+        address recipient = seq.rewardRecipient;
+        if (recipient == address(0)) {
+            revert NoRewardRecipient();
+        }
 
-        _transferTokenFrom(msg.sender, address(this), relockAmount);
+        // operator can only claim after WITHDRAWAL_DELAY
+        require(
+            seq.status == Status.Inactive &&
+            seq.unlockClaimTime <= block.timestamp,
+            "Not allowed to cliam"
+        );
+
+        uint256 amount = seq.amount;
+        uint256 reward = seq.reward;
+
+        seq.amount = 0;
+        seq.reward = 0;
+        seq.nonce++;
+        seq.status = Status.Unlocked;
+        seqStatuses[Status.Inactive]--;
+        seqStatuses[Status.Unlocked]++;
+
+        delete seqOwners[seq.owner];
+
+        // invalid it
+        _invalidSignerAddress(seq.signer);
+
+        escrowRename.finalizeUnlock{value: msg.value}(
+            msg.sender,
+            _seqId,
+            amount,
+            reward,
+            recipient,
+            _l2Gas
+        );
     }
 
     /**
      * @dev withdrawRewards withdraw current rewards
+     *      l2 fee is required
      *
-     * @param sequencerId unique integer to identify a sequencer.
-     * @param l2Gas bridge reward to L2 gasLimit
+     * @param _seqId unique integer to identify a sequencer.
+     * @param _l2Gas bridge reward to L2 gasLimit
      */
-    function withdrawRewards(uint256 sequencerId, uint32 l2Gas) override external payable {
-        require(whiteListAddresses[msg.sender],"msg sender should be in the white list");
-        require(whiteListBoundSequencer[msg.sender] == sequencers[sequencerId].signer,"whiteAddress and boundSequencer mismatch");
+    function withdrawRewards(
+        uint256 _seqId,
+        uint32 _l2Gas
+    ) external payable whenNotPaused whitelistRequired {
+        Sequencer storage seq = sequencers[_seqId];
+        if (seq.status != Status.Active) {
+            revert SeqNotActive();
+        }
 
-        Sequencer storage sequencerInfo = sequencers[sequencerId];
-        _liquidateRewards(sequencerId, sequencerInfo.rewardRecipient, l2Gas);
+        if (seq.owner != msg.sender) {
+            revert NotSeqOwner();
+        }
+
+        address recipient = seq.rewardRecipient;
+        if (recipient == address(0)) {
+            revert NoRewardRecipient();
+        }
+        uint256 reward = seq.reward;
+        if (reward > 0) {
+            seq.reward = 0;
+            escrowRename.liquidateReward{value: msg.value}(
+                _seqId,
+                reward,
+                recipient,
+                _l2Gas
+            );
+        }
+    }
+
+    /**
+ * @dev withdraw allow sequencer operator to withdraw the locking
+     * @param _seqId the id of your sequencer
+     * @param _amount amount to withdraw
+     */
+    function withdraw(
+        uint256 _seqId,
+        uint256 _amount
+    ) external whenNotPaused whitelistRequired {
+        Sequencer storage seq = sequencers[_seqId];
+        if (seq.status != Status.Active) {
+            revert SeqNotActive();
+        }
+
+        if (seq.owner != msg.sender) {
+            revert NotSeqOwner();
+        }
+
+
+        uint256 locked = seq.amount - _amount;
+        uint256 nonce = seq.nonce + 1;
+
+        seq.nonce = nonce;
+        seq.amount = locked;
+        seq.updatedBatch = curBatchState.id;
+
+        escrowRename.withdrawLocking(_seqId, seq.owner, nonce, _amount, locked);
     }
 
     /**
      * @dev batchSubmitRewards Allow to submit L2 sequencer block information, and attach Metis reward tokens for reward distribution
-     * @param batchId The batchId that submitted the reward is that
-     * @param payeer Who Pays the Reward Tokens
-     * @param startEpoch The startEpoch that submitted the reward is that
-     * @param endEpoch The endEpoch that submitted the reward is that
-     * @param _sequencers Those sequencers can receive rewards
-     * @param finishedBlocks How many blocks each sequencer finished.
-     * @param signature Confirmed by mpc and signed for reward distribution
+     * @param _batchId The batchId that submitted the reward is that
+     * @param _startEpoch The startEpoch that submitted the reward is that
+     * @param _endEpoch The endEpoch that submitted the reward is that
+     * @param _seqs Those sequencers can receive rewards
+     * @param _blocks How many blocks each sequencer finished.
      */
     function batchSubmitRewards(
-        uint256 batchId,
-        address payeer,
-        uint256 startEpoch,
-        uint256 endEpoch,
-        address[] memory _sequencers,
-        uint256[] memory finishedBlocks,
-        bytes memory signature
-    )  external payable returns (uint256) {
-        require(_sequencers.length == finishedBlocks.length, "mismatch length");
-        require(batchId >= 0, "invalid batchId");
-        require(startEpoch >= 0, "invalid startEpoch");
-        require(endEpoch >= 0, "invalid endEpoch");
-        require(signature.length >= 0, "invalid signature");
+        uint256 _batchId,
+        uint256 _startEpoch,
+        uint256 _endEpoch,
+        address[] calldata _seqs,
+        uint256[] calldata _blocks
+    ) external {
+        require(
+            _seqs.length == _blocks.length && _seqs.length > 0,
+            "mismatch length"
+        );
 
-        // mock earn reward
-        uint256 totalReward = 1e22;
+        BatchState storage bs = curBatchState;
+        uint256 nextBatch = bs.id + 1;
+        bs.id = nextBatch;
 
-        // calc total finished blocks
-        uint256 totalFinishedBlocks;
-        for (uint256 i = 0; i < finishedBlocks.length;) {
-            unchecked{
-                totalFinishedBlocks += finishedBlocks[i];
-                ++i;
+        uint256 rpb = rewardPerBlock;
+        uint256 totalReward = 0;
+        for (uint256 i = 0; i < _seqs.length; i++) {
+            uint256 reward = 1e22;
+            uint256 seqId = seqSigners[_seqs[i]];
+            Sequencer storage seq = sequencers[seqId];
+            if (seq.status == Status.Unavailabe) {
+                revert NoSuchSeq();
+            }
+            seq.reward += reward;
+            totalReward += reward;
+        }
+        bs.number = block.number;
+        bs.startEpoch = _startEpoch;
+        bs.endEpoch = _endEpoch;
+        escrowRename.distributeReward(_batchId, totalReward);
+        emit DistributeReward(
+            _batchId,
+            _startEpoch,
+            _endEpoch,
+            totalReward,
+            rpb
+        );
+    }
+
+    function _unlock(uint256 _seqId, bool _force, uint32 _l2Gas) internal {
+        Sequencer storage seq = sequencers[_seqId];
+        if (seq.status != Status.Active) {
+            revert SeqNotActive();
+        }
+
+        uint256 actived = --seqStatuses[Status.Active];
+        uint256 inactived = ++seqStatuses[Status.Inactive];
+
+        if (!_force) {
+            if (seq.owner != msg.sender) {
+                revert NotSeqOwner();
+            }
+
+            // BFT check, actived sequencer count must be high than 2/3 of total
+            if (inactived * 3 > actived + inactived) {
+                revert("BFT restriction");
             }
         }
 
-        // distribute reward
-        for (uint256 i = 0; i < _sequencers.length;) {
-            require(signerToSequencer[_sequencers[i]] > 0,"sequencer not exist");
-
-            uint256 reward = _calculateReward(totalReward,totalFinishedBlocks,finishedBlocks[i]);
-            _increaseReward(_sequencers[i],reward);
-
-            unchecked{
-                ++i;
-            }
+        address recipient = seq.rewardRecipient;
+        if (recipient == address(0)) {
+            revert NoRewardRecipient();
         }
 
-        // reward income
-        IERC20(l1Token).safeTransferFrom(payeer, address(this), totalReward);
-        return totalReward;
+        seq.status = Status.Inactive;
+        seq.deactivationBatch = curBatchState.id;
+        seq.deactivationTime = block.timestamp;
+        seq.unlockClaimTime = block.timestamp + exitDelayPeriod;
+        seq.nonce++;
+
+        uint256 unclaimed = seq.reward;
+        seq.reward = 0;
+
+        escrowRename.initializeUnlock{value: msg.value}(
+            _seqId,
+            unclaimed,
+            _l2Gas,
+            seq
+        );
     }
 
-    /**
-     * @dev setSequencerRewardRecipient Allow sequencer owner to set a reward recipient
-     * @param sequencerId The sequencerId
-     * @param recipient Who will receive the reward token
-     */
-    function setSequencerRewardRecipient(
-        uint256 sequencerId,
-        address recipient
-    )  external {
-        require(whiteListAddresses[msg.sender],"msg sender should be in the white list");
-        require(whiteListBoundSequencer[msg.sender] == sequencers[sequencerId].signer,"whiteAddress and boundSequencer mismatch");
-        require(recipient != address(0), "invalid recipient");
-
-        Sequencer storage sequencerInfo = sequencers[sequencerId];
-        sequencerInfo.rewardRecipient = recipient;
-    }
-
-    // query owenr by NFT token id
-    function ownerOf(uint256 tokenId) override external pure returns (address) {
-        require(tokenId >= 0, "invalid tokenId");
-        return address(0);
-    }
-
-    // query current lock amount by sequencer id
-    function sequencerLock(uint256 sequencerId) override external view returns (uint256) {
-        return sequencers[sequencerId].amount;
-    }
-
-    // get sequencer id by address
-    function getSequencerId(address user) override external view returns (uint256) {
-        return signerToSequencer[user];
-    }
-
-    //  get sequencer reward by sequencer id
-    function sequencerReward(uint256 sequencerId) override external view returns (uint256) {
-        return sequencers[sequencerId].reward ;
-    }
-
-    // get total lock amount for all sequencers
-    function currentSequencerSetTotalLock() override external pure returns (uint256) {
-        return 0;
-    }
-
-    /**
-      * @dev fetchMpcAddress query mpc address by L1 block height, used by batch-submitter
-      * @param blockHeight the L1 block height
-      */
-    function fetchMpcAddress(uint256 blockHeight) override external pure returns(address){
-        require(blockHeight >= 0, "invalid blockHeight");
-        return address(0);
-    }
-
-
-
-    /*
-    * @dev getL2ChainId return the l2 chain id
-    * @param l1ChainId the L1 chain id
-    */
-    function getL2ChainId(uint256 l1ChainId) override public pure returns(uint256) {
-        if (l1ChainId == 1) {
-            return 1088;
-        }
-        return 59901;
-    }
-
-    // get all sequencer count
-    function currentSequencerSetSize() override public pure returns (uint256) {
-        return 0;
-    }
-
-    function _lockFor(
-        address user,
-        uint256 amount,
-        bytes memory signerPubkey
-    ) internal returns (uint256) {
-        require(signerPubkey.length >= 0, "invalid signer pubkey");
-        address signer = user;
-
-        uint256 sequencerId = counter;
-        totalLocked += amount;
-
-        sequencers[sequencerId] = Sequencer({
-            reward: 0,
-            amount: amount,
-            activationBatch: 0,
-            deactivationBatch: 0,
-            deactivationTime: 0,
-            unlockClaimTime: 0,
-            signer: signer,
-            rewardRecipient: address(0),
-            status: Status.Active
-        });
-
-        signerToSequencer[signer] = sequencerId;
-        counter = sequencerId + 1;
-
-        return sequencerId;
-    }
-
-    // The function restricts the sequencer's exit if the number of total locked sequencers divided by 3 is less than the number of
-    // sequencers that have already exited. This would effectively freeze the sequencer's unlock function until a sufficient number of
-    // new sequencers join the system.
-    function _unlock(uint256 sequencerId, uint256 exitBatch,bool force,uint32 l2Gas) internal {
-    }
-
-    function isContract(address _target) internal view returns (bool) {
-        if (_target == address(0)) {
-            return false;
-        }
-
-        uint256 size;
-        assembly {
-            size := extcodesize(_target)
-        }
-        return size > 0;
-    }
-
-    function _calculateReward(
-        uint256 totalRewards,
-        uint256 totalBlocks,
-        uint256 finishedBlocks
-    ) internal pure returns (uint256) {
-        // rewards are based on BlockInterval multiplied on `perSecondReward`
-        return totalRewards * finishedBlocks / totalBlocks;
-    }
-
-
-    /**
-        Private Methods
-     */
-
-    function _increaseReward(
-        address sequencer,
-        uint256 reward
-    ) private  {
-        uint256 sequencerId = signerToSequencer[sequencer];
-        // update reward
-        sequencers[sequencerId].reward +=  reward;
-    }
-
-    function _liquidateRewards(uint256 sequencerId, address recipient, uint32 l2Gas) private {
-        require(recipient != address(0), "invalid reward recipient");
-        require(l2Gas >= 0, "invalid l2Gas");
-        uint256 reward = sequencers[sequencerId].reward ;
-        totalRewardsLiquidated = totalRewardsLiquidated + reward;
-        sequencers[sequencerId].reward = 0;
-
-        // mock withdraw reward to L2
-        _transferToken(recipient, reward);
-    }
-
-    function _transferToken(address destination, uint256 amount) private {
-        IERC20(l1Token).safeTransfer(destination, amount);
-    }
-
-    function _transferTokenFrom(
-        address from,
-        address destination,
-        uint256 amount
-    ) private {
-        IERC20(l1Token).safeTransferFrom(from, destination, amount);
+    function escrow() external view returns (address) {
+        return address(escrowRename);
     }
 }

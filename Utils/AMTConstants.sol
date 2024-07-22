@@ -13,4 +13,5 @@ library AMTConstants {
     bytes32 public constant AMT_DEPOSIT_POOL = keccak256("AMT_DEPOSIT_POOL");
     bytes32 public constant METIS = keccak256("METIS");
     bytes32 public constant L1_STAKING_POOL = keccak256("L1_STAKING_POOL");
+    bytes32 public constant AMT_WITHDRAWAL_MANAGER = keccak256("AMT_WITHDRAWAL_MANAGER");
 }
