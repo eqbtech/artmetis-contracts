@@ -142,7 +142,7 @@ contract StakingPoolManager is IStakingPoolManager, AccessControlUpgradeable {
         require(pools.length() > 0, "StakingPoolManager: no pools");
         for (uint256 i = 0; i < pools.length(); i++) {
             IStakingPool _stakingPool = IStakingPool(pools.at(i));
-            _stakingPool.claimRewards{value: msg.value}(_l2GasLimit);
+            _stakingPool.claimRewards{value: msg.value / pools.length()}(_l2GasLimit);
         }
     }
 

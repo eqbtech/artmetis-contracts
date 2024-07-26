@@ -134,6 +134,7 @@ contract StakingPool is IStakingPool, AccessControlUpgradeable {
             _recipient != address(0),
             "StakingPool: invalid recipient"
         );
+        require(_getLocked() >= lockingInfo.minLock() + _amount, "StakingPool: exceed min lock");
         lockingPool.withdraw(sequencerId, _amount);
         _bridgeTo(_recipient, _amount, 0);
         emit StakingAmountWithdrawn(_recipient, _amount);

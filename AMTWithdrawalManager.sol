@@ -105,6 +105,7 @@ contract AMTWithdrawalManager is
     function unlockWithdrawal(
         uint256 _firstExcludeNonce
     ) external onlyRole(AMTConstants.ADMIN_ROLE) {
+        require(_firstExcludeNonce > nextUnlockNonce, "AMTWithdrawalManager: invalid first exclude nonce");
         uint256 _metisAmount = calculateUnlockNonce(_firstExcludeNonce);
         IAMTDepositPool depositPool = IAMTDepositPool(
             config.getContract(AMTConstants.AMT_DEPOSIT_POOL)
@@ -154,8 +155,9 @@ contract AMTWithdrawalManager is
             "AMTWithdrawalManager: withdraw request is not ready to complete"
         );
 
-        TransferHelper.safeTransferETH(msg.sender, request.expectedAmount);
+        uint256 _expectedAmount = request.expectedAmount;
         delete withdrawRequests[_userFirstWithdrawNonce];
+        TransferHelper.safeTransferETH(msg.sender, _expectedAmount);
         emit WithdrawRequestCompleted(msg.sender, _userFirstWithdrawNonce);
     }
 
