@@ -224,6 +224,10 @@ contract SequencerPool is
                 "SequencerPool: NOT_WHITELISTED"
             );
         }
+        require(
+            userLocked[_user][_token] >= _amount,
+            "SequencerPool: INSUFFICIENT_BALANCE");
+
         _unlock(_user, _token, _amount, _isPartner);
         emit Unlocked(_user, _token, _amount, _isPartner);
     }

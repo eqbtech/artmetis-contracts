@@ -3,6 +3,7 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@shared/lib-contracts-v0.8/contracts/Dependencies/TransferHelper.sol";
 import "@shared/lib-contracts-v0.8/contracts/Interfaces/IERC20MintBurn.sol";
 import "./Interfaces/IDepositPool.sol";
@@ -38,7 +39,7 @@ contract DepositPool is
         _setupRole(Constants.ADMIN_ROLE, _owner);
 
         require(_config != address(0), "DepositPool: INVALID_CONFIG");
-        __GoatControl_init_unchained(_config);
+        __GoatControl_init(_config);
 
         require(_token != address(0), "DepositPool: INVALID_TOKEN");
         require(_artToken != address(0), "DepositPool: INVALID_ART_TOKEN");
@@ -154,13 +155,15 @@ contract DepositPool is
     }
 
     function addReward(
+        address _token,
         uint256 _amount
     ) external payable override onlyDistributor {
+        require(_token == token, "DepositPool: INVALID_TOKEN");
         require(_amount > 0, "DepositPool: INVALID_AMOUNT");
-        if (AddressLib.isPlatformToken(token)) {
+        if (AddressLib.isPlatformToken(_token)) {
             require(msg.value == _amount, "DepositPool: INVALID_AMOUNT");
         } else {
-            IERC20(token).safeTransferFrom(msg.sender, address(this), _amount);
+            IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
         }
         totalDeposited += _amount;
         emit RewardAdded(_amount);

@@ -8,12 +8,6 @@ abstract contract GoatAccessController is Initializable {
     IGoatConfig public config;
 
     function __GoatControl_init(address _config) internal onlyInitializing {
-        __GoatControl_init_unchained(_config);
-    }
-
-    function __GoatControl_init_unchained(
-        address _config
-    ) internal onlyInitializing {
         config = IGoatConfig(_config);
     }
 

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
-interface IDepositPool {
+import "./IRewardReceiver.sol";
+
+interface IDepositPool is IRewardReceiver {
     function initialize(
         address _owner,
         address _config,
@@ -25,8 +27,6 @@ interface IDepositPool {
         address _user,
         uint256 _artAmount
     ) external returns (uint256);
-
-    function addReward(uint256 _amount) external payable;
 
     event InitializedSet(address _token, address indexed _artToken);
     event Deposited(
