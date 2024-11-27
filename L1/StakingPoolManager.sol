@@ -96,6 +96,24 @@ contract StakingPoolManager is IStakingPoolManager, AccessControlUpgradeable {
         emit SequencerBound(_pool, _signer, _amount, _signerPubKey);
     }
 
+    function unlockSequencerInitialize(
+        address _pool,
+        uint32 _l2Gas
+    ) external payable onlyRole(AMTConstants.ADMIN_ROLE) {
+        require(pools.contains(_pool), "StakingPoolManager: pool not exists");
+        IStakingPool(_pool).unlockSequencerInitialize{value: msg.value}(_l2Gas);
+        emit SequencerUnboundInitialize(_pool);
+    }
+
+    function unlockSequencerFinalize(
+        address _pool,
+        uint32 _l2Gas
+    ) external payable onlyRole(AMTConstants.ADMIN_ROLE) {
+        require(pools.contains(_pool), "StakingPoolManager: pool not exists");
+        IStakingPool(_pool).unlockSequencerFinalize{value: msg.value}(_l2Gas);
+        emit SequencerUnboundFinalize(_pool);
+    }
+
     function removePool(
         address _pool
     ) external onlyRole(AMTConstants.ADMIN_ROLE) {
@@ -136,13 +154,27 @@ contract StakingPoolManager is IStakingPoolManager, AccessControlUpgradeable {
         emit StakingAmountWithdrawn(_pool, _recipient, _amount);
     }
 
+    function withdrawToManager(
+        address _pool,
+        uint256 _amount
+    ) external onlyRole(AMTConstants.ADMIN_ROLE) {
+        require(pools.contains(_pool), "StakingPoolManager: pool not exists");
+        if (_amount == 0) {
+            return;
+        }
+        IStakingPool(_pool).withdrawStakingAmountToManager(_amount);
+        emit StakingAmountWithdrawn(_pool, address(this), _amount);
+    }
+
     function claimRewards(
         uint32 _l2GasLimit
     ) external payable onlyRole(AMTConstants.ADMIN_ROLE) {
         require(pools.length() > 0, "StakingPoolManager: no pools");
         for (uint256 i = 0; i < pools.length(); i++) {
             IStakingPool _stakingPool = IStakingPool(pools.at(i));
-            _stakingPool.claimRewards{value: msg.value / pools.length()}(_l2GasLimit);
+            _stakingPool.claimRewards{value: msg.value / pools.length()}(
+                _l2GasLimit
+            );
         }
     }
 

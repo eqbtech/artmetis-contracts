@@ -114,6 +114,20 @@ contract StakingPool is IStakingPool, AccessControlUpgradeable {
         emit SequencerBound(_signer, _amount, _signerPubKey, sequencerId);
     }
 
+    function unlockSequencerInitialize(uint32 _l2Gas) external payable onlyStakingManager {
+        require(sequencerId != 0, "StakingPool: sequencer not binded");
+        lockingPool.unlock{value: msg.value}(sequencerId, _l2Gas);
+        emit SequencerUnboundInitialize(sequencerId);
+    }
+
+    function unlockSequencerFinalize(uint32 _l2Gas) external payable onlyStakingManager {
+        require(sequencerId != 0, "StakingPool: sequencer not binded");
+        lockingPool.unlockClaim{value: msg.value}(sequencerId, _l2Gas);
+        uint256 _amount = IERC20(l1Token).balanceOf(address(this));
+        IERC20(l1Token).safeTransfer(msg.sender, _amount);
+        emit SequencerUnboundFinalize(sequencerId, _amount);
+    }
+
     function increaseStakingAmount(
         uint256 _amount
     ) external onlyStakingManager {
@@ -129,15 +143,26 @@ contract StakingPool is IStakingPool, AccessControlUpgradeable {
         address _recipient,
         uint256 _amount
     ) external onlyStakingManager {
-        require(_amount > 0, "StakingPool: invalid amount");
-        require(
-            _recipient != address(0),
-            "StakingPool: invalid recipient"
-        );
-        require(_getLocked() >= lockingInfo.minLock() + _amount, "StakingPool: exceed min lock");
-        lockingPool.withdraw(sequencerId, _amount);
+        require(_recipient != address(0), "StakingPool: invalid recipient");
+        _withdrawStakingAmount(_amount);
         _bridgeTo(_recipient, _amount, 0);
         emit StakingAmountWithdrawn(_recipient, _amount);
+    }
+
+    function withdrawStakingAmountToManager(
+        uint256 _amount
+    ) external onlyStakingManager {
+        _withdrawStakingAmount(_amount);
+        IERC20(l1Token).transfer(msg.sender, _amount);
+    }
+
+    function _withdrawStakingAmount(uint256 _amount) internal {
+        require(_amount > 0, "StakingPool: invalid amount");
+        require(
+            _getLocked() >= lockingInfo.minLock() + _amount,
+            "StakingPool: exceed min lock"
+        );
+        lockingPool.withdraw(sequencerId, _amount);
     }
 
     // l2GasLimit * discount < msg.value

@@ -55,6 +55,16 @@ interface ILockingPool is ISequencerInfo {
         bytes calldata _signerPubkey
     ) external;
 
+    function unlock(
+        uint256 _seqId,
+        uint32 _l2Gas
+    ) external payable;
+
+    function unlockClaim(
+        uint256 _seqId,
+        uint32 _l2Gas
+    ) external payable;
+
     function lockWithRewardRecipient(
         address _signer,
         address _rewardRecipient,
