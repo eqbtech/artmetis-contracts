@@ -67,11 +67,7 @@ contract SequencerPool is
 
         withdrawalRecipient = _withdrawalRecipient;
 
-        emit InitializedSet(
-            _locking,
-            _config,
-            _withdrawalRecipient
-        );
+        emit InitializedSet(_locking, _config, _withdrawalRecipient);
     }
 
     function setDistributor(
@@ -81,9 +77,7 @@ contract SequencerPool is
         emit DistributorSet(_distributor);
     }
 
-    function addWhitelist(
-        address _user
-    ) external onlyRole(Constants.ADMIN_ROLE) {
+    function addWhitelist(address _user) public onlyRole(Constants.ADMIN_ROLE) {
         require(
             !whitelist.contains(_user),
             "SequencerPool: ALREADY_WHITELISTED"
@@ -106,6 +100,33 @@ contract SequencerPool is
             _whitelist[i] = whitelist.at(i);
         }
         return _whitelist;
+    }
+
+    function bindExistsSequencer(
+        address _validator,
+        address _partner
+    ) external override onlyRole(Constants.ADMIN_ROLE) {
+        require(validator == address(0), "SequencerPool: VALIDATOR_EXISTS");
+        require(_validator != address(0), "SequencerPool: INVALID_VALIDATOR");
+        require(_partner != address(0), "SequencerPool: INVALID_PARTNER");
+        ILocking.Locking[] memory _locking = locking.creationThreshold();
+        for (uint256 i = 0; i < _locking.length; i++) {
+            address _token = _locking[i].token;
+            uint256 _lockedAmount = locking.locking(_validator, _token);
+            if (_lockedAmount == 0) {
+                continue;
+            }
+            if (_token == address(0)) {
+                _token = AddressLib.PLATFORM_TOKEN_ADDRESS;
+            }
+            totalLocked[_token] += _lockedAmount;
+            userLocked[_partner][_token] += _lockedAmount;
+            emit Locked(_partner, _token, _lockedAmount, true);
+        }
+        addWhitelist(_partner);
+        validator = _validator;
+        open = true;
+        emit BindExistsSequencer(_validator, _partner);
     }
 
     function create(
@@ -226,7 +247,8 @@ contract SequencerPool is
         }
         require(
             userLocked[_user][_token] >= _amount,
-            "SequencerPool: INSUFFICIENT_BALANCE");
+            "SequencerPool: INSUFFICIENT_BALANCE"
+        );
 
         _unlock(_user, _token, _amount, _isPartner);
         emit Unlocked(_user, _token, _amount, _isPartner);

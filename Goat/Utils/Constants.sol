@@ -14,4 +14,6 @@ library Constants {
     bytes32 public constant REWARD_POOL = keccak256("REWARD_POOL");
     bytes32 public constant WITHDRAWAL_RECIPIENT =
         keccak256("WITHDRAWAL_RECIPIENT");
+    bytes32 public constant SEQUENCER_POOL_MANAGER =
+        keccak256("SEQUENCER_POOL_MANAGER");
 }

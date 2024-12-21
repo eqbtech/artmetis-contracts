@@ -4,11 +4,13 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 import "@shared/lib-contracts-v0.8/contracts/Dependencies/TransferHelper.sol";
 import "@shared/lib-contracts-v0.8/contracts/Interfaces/IERC20MintBurn.sol";
 import "./Interfaces/IDepositPool.sol";
 import "./Interfaces/ISequencerPool.sol";
 import "./Interfaces/IRewardDistributor.sol";
+import "./Interfaces/ISequencerPoolManager.sol";
 import "./Utils/Constants.sol";
 import "./GoatAccessController.sol";
 
@@ -62,7 +64,13 @@ contract DepositPool is
         uint256 _amount,
         uint256 _minArtTokenAmountToReceive,
         string calldata _referralId
-    ) external payable harvest(_pool) returns (uint256) {
+    )
+        external
+        payable
+        validSequencerPool(_pool)
+        harvest(_pool)
+        returns (uint256)
+    {
         require(_amount > 0, "DepositPool: INVALID_AMOUNT");
         uint256 _artTokenAmount = getArtTokenAmountToMint(_amount);
         require(
@@ -95,7 +103,7 @@ contract DepositPool is
     function partnerDeposit(
         address _pool,
         uint256 _amount
-    ) external payable harvest(_pool) {
+    ) external payable validSequencerPool(_pool) harvest(_pool) {
         require(_amount > 0, "DepositPool: INVALID_AMOUNT");
         if (AddressLib.isPlatformToken(token)) {
             require(msg.value == _amount, "DepositPool: INVALID_AMOUNT");
@@ -129,7 +137,7 @@ contract DepositPool is
     function partnerWithdraw(
         address _pool,
         uint256 _amount
-    ) external harvest(_pool) {
+    ) external validSequencerPool(_pool) harvest(_pool) {
         require(_amount > 0, "DepositPool: INVALID_AMOUNT");
         ISequencerPool(_pool).unlock(msg.sender, token, _amount, true);
     }
@@ -138,13 +146,15 @@ contract DepositPool is
         address _pool,
         address _user,
         uint256 _artAmount
-    ) external onlyWithdrawalManager harvest(_pool) returns (uint256) {
-        require(
-            _artAmount > 0,
-            "AMTDepositPool: invalid amount"
-        );
-        uint256 _amount = (_artAmount * 1e18) /
-                            getArtTokenAmountToMint(1e18);
+    )
+        external
+        onlyWithdrawalManager
+        validSequencerPool(_pool)
+        harvest(_pool)
+        returns (uint256)
+    {
+        require(_artAmount > 0, "AMTDepositPool: invalid amount");
+        uint256 _amount = (_artAmount * 1e18) / getArtTokenAmountToMint(1e18);
         IERC20MintBurn(artToken).burn(_user, _artAmount);
 
         totalDeposited -= _amount;
@@ -169,12 +179,24 @@ contract DepositPool is
         emit RewardAdded(_amount);
     }
 
+    modifier validSequencerPool(address _pool) {
+        address _sequencerPoolManager = config.getContract(
+            Constants.SEQUENCER_POOL_MANAGER
+        );
+        require(
+            _sequencerPoolManager != address(0),
+            "DepositPool: INVALID_SEQUENCER_POOL_MANAGER"
+        );
+        require(
+            ISequencerPoolManager(_sequencerPoolManager).isValidPool(_pool),
+            "DepositPool: INVALID_SEQUENCER_POOL"
+        );
+        _;
+    }
+
     modifier harvest(address _pool) {
-        ISequencerPool(_pool).claim();
         IRewardDistributor(ISequencerPool(_pool).distributor())
             .distributeReward();
         _;
     }
-
-    receive() external payable {}
 }

@@ -17,6 +17,7 @@ interface ISequencerPool {
         bytes32 _sigS,
         uint8 _sigV
     );
+    event BindExistsSequencer(address indexed _validator, address _partner);
     event Locked(
         address indexed _user,
         address indexed _token,
@@ -46,6 +47,8 @@ interface ISequencerPool {
     function distributor() external view returns (address);
 
     function open() external view returns (bool);
+
+    function bindExistsSequencer(address _validator, address _partner) external;
 
     function create(
         bytes32[2] calldata _pubkey,
