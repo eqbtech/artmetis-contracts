@@ -131,5 +131,9 @@ contract SequencerPoolManager is
         return pools.length();
     }
 
+    function isValidPool(address _pool) external view override returns (bool) {
+        return pools.contains(_pool);
+    }
+
     receive() external payable {}
 }

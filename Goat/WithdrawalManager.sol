@@ -95,7 +95,8 @@ contract WithdrawalManager is IWithdrawalManager, AccessControlUpgradeable {
         withdrawRequests[nextWithdrawNonce] = WithdrawRequest({
             artAmount: _artAmount,
             expectedAmount: _expectedAmount,
-            startTime: block.timestamp
+            startTime: block.timestamp,
+            maturityTime: block.timestamp + withdrawDelay
         });
 
         emit WithdrawRequestInitiated(
@@ -164,13 +165,15 @@ contract WithdrawalManager is IWithdrawalManager, AccessControlUpgradeable {
             _userFirstWithdrawNonce
         ];
         require(
-            request.startTime + withdrawDelay <= block.timestamp,
+            request.maturityTime <= block.timestamp,
             "WithdrawalManager: withdraw request is not ready to complete"
         );
 
         uint256 _expectedAmount = request.expectedAmount;
         delete withdrawRequests[_userFirstWithdrawNonce];
-        address(token).safeTransferToken(msg.sender, _expectedAmount);
+        if (_expectedAmount > 0) {
+            address(token).safeTransferToken(msg.sender, _expectedAmount);
+        }
         emit WithdrawRequestCompleted(msg.sender, _userFirstWithdrawNonce);
     }
 

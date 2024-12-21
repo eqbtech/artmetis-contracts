@@ -3,6 +3,7 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@shared/lib-contracts-v0.8/contracts/Dependencies/TransferHelper.sol";
 import "./Interfaces/IRewardPool.sol";
 import "./Utils/Constants.sol";
@@ -11,6 +12,7 @@ import "./GoatAccessController.sol";
 contract RewardPool is
     GoatAccessController,
     IRewardPool,
+    ReentrancyGuardUpgradeable,
     AccessControlUpgradeable
 {
     using SafeERC20 for IERC20;
@@ -25,6 +27,7 @@ contract RewardPool is
         address _goatToken
     ) public initializer {
         __AccessControl_init();
+        __ReentrancyGuard_init_unchained();
 
         require(_config != address(0), "RewardPool: INVALID_CONFIG");
         __GoatControl_init(_config);
@@ -45,7 +48,7 @@ contract RewardPool is
     // user => amount
     mapping(address => uint256) public goatRewards;
 
-    function claimAll() external {
+    function claimAll() external nonReentrant {
         uint256 _btcAmount = btcRewards[msg.sender];
         uint256 _goatAmount = goatRewards[msg.sender];
 
