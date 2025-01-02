@@ -11,6 +11,7 @@ import "./Interfaces/IBaseRewardPool.sol";
 import "./Interfaces/IDepositPool.sol";
 import "./Interfaces/IGoatConfig.sol";
 import "./Utils/Constants.sol";
+import {ILocking} from "./Official/Interfaces/ILocking.sol";
 
 contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
     using TransferHelper for address;
@@ -102,6 +103,24 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
         emit ExtraShareSet(msg.sender, _extraShare);
     }
 
+    function claimPendingReward(
+        address _recipient
+    ) external override onlyRole(Constants.ADMIN_ROLE) {
+        require(
+            _recipient != address(0),
+            "RewardDistributor: INVALID_RECIPIENT"
+        );
+        ILocking _locking = ILocking(ISequencerPool(sequencerPool).locking());
+        uint256 _goatBefore = IERC20(goat).balanceOf(address(this));
+        _locking.reclaim();
+        uint256 _goatReward = IERC20(goat).balanceOf(address(this)) -
+            _goatBefore;
+        if (_goatReward > 0) {
+            IERC20(goat).safeTransfer(_recipient, _goatReward);
+            emit PendingGoatClaimed(_recipient, _goatReward);
+        }
+    }
+
     function distributeReward() external {
         // check if sequencer pool is open
         if (!ISequencerPool(sequencerPool).open()) {
@@ -119,10 +138,7 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
             uint256[] memory _weightInPartner,
             uint256[] memory _totalWeight
         ) = _getPartnerWeight(_whitelist);
-        _distributeToPartner(
-            _whitelist,
-            _totalWeight
-        );
+        _distributeToPartner(_whitelist, _totalWeight);
         _distributeFee(_whitelist, _weightInPartner);
         _distributeToPool();
     }
@@ -443,7 +459,7 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
             IERC20(_token).approve(rewardPool, _amount);
             IRewardPool(rewardPool).addReward(_user, _token, _amount);
         }
-        emit RewardDistributed(rewardPool, sequencerPool, _token, _amount);
+        emit RewardDistributed(rewardPool, _user, _token, _amount);
     }
 
     receive() external payable {}

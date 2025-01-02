@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
+import {ILocking} from "../Official/Interfaces/ILocking.sol";
+
 interface ISequencerPool {
     event InitializedSet(
         address _locking,
@@ -85,4 +87,6 @@ interface ISequencerPool {
         address _user,
         address _token
     ) external view returns (uint256);
+
+    function locking() external view returns (ILocking);
 }

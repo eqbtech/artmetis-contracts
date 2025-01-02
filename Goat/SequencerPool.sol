@@ -213,10 +213,13 @@ contract SequencerPool is
             _token = address(0);
         } else {
             _balance = IERC20(_token).balanceOf(address(this));
-            IERC20(_token).safeApprove(address(locking), _balance);
         }
         if (!_canLock(_token, _balance)) {
             return;
+        }
+        if (_token != address(0)) {
+            IERC20(_token).approve(address(locking), 0);
+            IERC20(_token).approve(address(locking), _amount);
         }
         ILocking.Locking[] memory _locking = new ILocking.Locking[](1);
         _locking[0] = ILocking.Locking(_token, _balance);
@@ -230,7 +233,8 @@ contract SequencerPool is
         (, , uint256 _limit, uint256 _threshold) = locking.tokens(_token);
         uint256 _locked = locking.locking(validator, _token);
         _locked += _balance;
-        return _locked <= _limit && _locked >= _threshold;
+        require(_locked <= _limit, "SequencerPool: EXCEED_LIMIT");
+        return _locked >= _threshold;
     }
 
     function unlock(
@@ -260,14 +264,25 @@ contract SequencerPool is
         uint256 _amount,
         bool _isPartner
     ) internal updateLocked(_user, _token, _amount, false) {
-        require(validator != address(0), "SequencerPool: NO_VALIDATOR");
         require(distributor != address(0), "SequencerPool: NO_DISTRIBUTOR");
+        address _recipient = _isPartner ? _user : withdrawalRecipient;
+        uint256 _balance = TransferHelper.balanceOf(_token, address(this));
+
+        if (_balance >= _amount) {
+            TransferHelper.safeTransferToken(_token, _recipient, _amount);
+            return;
+        }
+
+        _amount -= _balance;
+        if (_balance > 0) {
+            TransferHelper.safeTransferToken(_token, _recipient, _balance);
+        }
+
         if (AddressLib.isPlatformToken(_token)) {
             _token = address(0);
         }
         ILocking.Locking[] memory _locking = new ILocking.Locking[](1);
         _locking[0] = ILocking.Locking(_token, _amount);
-        address _recipient = _isPartner ? _user : withdrawalRecipient;
         locking.unlock(validator, _recipient, _locking);
     }
 
