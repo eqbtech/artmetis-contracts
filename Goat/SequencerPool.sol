@@ -219,7 +219,7 @@ contract SequencerPool is
         }
         if (_token != address(0)) {
             IERC20(_token).approve(address(locking), 0);
-            IERC20(_token).approve(address(locking), _amount);
+            IERC20(_token).approve(address(locking), _balance);
         }
         ILocking.Locking[] memory _locking = new ILocking.Locking[](1);
         _locking[0] = ILocking.Locking(_token, _balance);
@@ -230,10 +230,9 @@ contract SequencerPool is
         address _token,
         uint256 _balance
     ) internal view returns (bool) {
-        (, , uint256 _limit, uint256 _threshold) = locking.tokens(_token);
+        (, , , uint256 _threshold) = locking.tokens(_token);
         uint256 _locked = locking.locking(validator, _token);
         _locked += _balance;
-        require(_locked <= _limit, "SequencerPool: EXCEED_LIMIT");
         return _locked >= _threshold;
     }
 
