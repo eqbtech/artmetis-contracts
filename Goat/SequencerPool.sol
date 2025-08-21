@@ -67,11 +67,7 @@ contract SequencerPool is
 
         withdrawalRecipient = _withdrawalRecipient;
 
-        emit InitializedSet(
-            _locking,
-            _config,
-            _withdrawalRecipient
-        );
+        emit InitializedSet(_locking, _config, _withdrawalRecipient);
     }
 
     function setDistributor(
@@ -81,9 +77,7 @@ contract SequencerPool is
         emit DistributorSet(_distributor);
     }
 
-    function addWhitelist(
-        address _user
-    ) external onlyRole(Constants.ADMIN_ROLE) {
+    function addWhitelist(address _user) public onlyRole(Constants.ADMIN_ROLE) {
         require(
             !whitelist.contains(_user),
             "SequencerPool: ALREADY_WHITELISTED"
@@ -106,6 +100,33 @@ contract SequencerPool is
             _whitelist[i] = whitelist.at(i);
         }
         return _whitelist;
+    }
+
+    function bindExistsSequencer(
+        address _validator,
+        address _partner
+    ) external override onlyRole(Constants.ADMIN_ROLE) {
+        require(validator == address(0), "SequencerPool: VALIDATOR_EXISTS");
+        require(_validator != address(0), "SequencerPool: INVALID_VALIDATOR");
+        require(_partner != address(0), "SequencerPool: INVALID_PARTNER");
+        ILocking.Locking[] memory _locking = locking.creationThreshold();
+        for (uint256 i = 0; i < _locking.length; i++) {
+            address _token = _locking[i].token;
+            uint256 _lockedAmount = locking.locking(_validator, _token);
+            if (_lockedAmount == 0) {
+                continue;
+            }
+            if (_token == address(0)) {
+                _token = AddressLib.PLATFORM_TOKEN_ADDRESS;
+            }
+            totalLocked[_token] += _lockedAmount;
+            userLocked[_partner][_token] += _lockedAmount;
+            emit Locked(_partner, _token, _lockedAmount, true);
+        }
+        addWhitelist(_partner);
+        validator = _validator;
+        open = true;
+        emit BindExistsSequencer(_validator, _partner);
     }
 
     function create(
@@ -192,10 +213,13 @@ contract SequencerPool is
             _token = address(0);
         } else {
             _balance = IERC20(_token).balanceOf(address(this));
-            IERC20(_token).safeApprove(address(locking), _balance);
         }
         if (!_canLock(_token, _balance)) {
             return;
+        }
+        if (_token != address(0)) {
+            IERC20(_token).approve(address(locking), 0);
+            IERC20(_token).approve(address(locking), _balance);
         }
         ILocking.Locking[] memory _locking = new ILocking.Locking[](1);
         _locking[0] = ILocking.Locking(_token, _balance);
@@ -206,10 +230,10 @@ contract SequencerPool is
         address _token,
         uint256 _balance
     ) internal view returns (bool) {
-        (, , uint256 _limit, uint256 _threshold) = locking.tokens(_token);
+        (, , , uint256 _threshold) = locking.tokens(_token);
         uint256 _locked = locking.locking(validator, _token);
         _locked += _balance;
-        return _locked <= _limit && _locked >= _threshold;
+        return _locked >= _threshold;
     }
 
     function unlock(
@@ -226,7 +250,8 @@ contract SequencerPool is
         }
         require(
             userLocked[_user][_token] >= _amount,
-            "SequencerPool: INSUFFICIENT_BALANCE");
+            "SequencerPool: INSUFFICIENT_BALANCE"
+        );
 
         _unlock(_user, _token, _amount, _isPartner);
         emit Unlocked(_user, _token, _amount, _isPartner);
@@ -238,14 +263,25 @@ contract SequencerPool is
         uint256 _amount,
         bool _isPartner
     ) internal updateLocked(_user, _token, _amount, false) {
-        require(validator != address(0), "SequencerPool: NO_VALIDATOR");
         require(distributor != address(0), "SequencerPool: NO_DISTRIBUTOR");
+        address _recipient = _isPartner ? _user : withdrawalRecipient;
+        uint256 _balance = TransferHelper.balanceOf(_token, address(this));
+
+        if (_balance >= _amount) {
+            TransferHelper.safeTransferToken(_token, _recipient, _amount);
+            return;
+        }
+
+        _amount -= _balance;
+        if (_balance > 0) {
+            TransferHelper.safeTransferToken(_token, _recipient, _balance);
+        }
+
         if (AddressLib.isPlatformToken(_token)) {
             _token = address(0);
         }
         ILocking.Locking[] memory _locking = new ILocking.Locking[](1);
         _locking[0] = ILocking.Locking(_token, _amount);
-        address _recipient = _isPartner ? _user : withdrawalRecipient;
         locking.unlock(validator, _recipient, _locking);
     }
 

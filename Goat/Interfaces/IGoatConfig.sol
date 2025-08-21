@@ -9,6 +9,7 @@ interface IGoatConfig {
     event BtcTokenAdded(address indexed _token);
     event SupportedTokenAdded(address indexed _token);
     event DistributorAdded(address indexed _distributor);
+    event SwapEnabledSet(bool _enabled);
 
     function setContract(
         bytes32 _contractKey,
@@ -54,6 +55,10 @@ interface IGoatConfig {
     function addDistributor(address _distributor) external;
 
     function isDistributor(address _distributor) external view returns (bool);
+
+    function setSwapEnabled(bool _enabled) external;
+
+    function isSwapEnabled() external view returns (bool);
 
     struct TokenContracts {
         address artToken;

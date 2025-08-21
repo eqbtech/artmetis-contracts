@@ -22,7 +22,9 @@ interface ISequencerPoolManager {
 
     function removePool(address _pool) external;
 
-    function getPoolCount() external returns (uint256);
+    function getPoolCount() external view returns (uint256);
 
-    function getPool(uint256 _index) external returns (address);
+    function getPool(uint256 _index) external view returns (address);
+
+    function isValidPool(address _pool) external view returns (bool);
 }

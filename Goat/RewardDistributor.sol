@@ -11,6 +11,9 @@ import "./Interfaces/IBaseRewardPool.sol";
 import "./Interfaces/IDepositPool.sol";
 import "./Interfaces/IGoatConfig.sol";
 import "./Utils/Constants.sol";
+import "./Interfaces/IUniversalRouter.sol";
+import {ILocking} from "./Official/Interfaces/ILocking.sol";
+import {ISwap} from "./Interfaces/ISwap.sol";
 
 contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
     using TransferHelper for address;
@@ -102,6 +105,24 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
         emit ExtraShareSet(msg.sender, _extraShare);
     }
 
+    function claimPendingReward(
+        address _recipient
+    ) external override onlyRole(Constants.ADMIN_ROLE) {
+        require(
+            _recipient != address(0),
+            "RewardDistributor: INVALID_RECIPIENT"
+        );
+        ILocking _locking = ILocking(ISequencerPool(sequencerPool).locking());
+        uint256 _goatBefore = IERC20(goat).balanceOf(address(this));
+        _locking.reclaim();
+        uint256 _goatReward = IERC20(goat).balanceOf(address(this)) -
+            _goatBefore;
+        if (_goatReward > 0) {
+            IERC20(goat).safeTransfer(_recipient, _goatReward);
+            emit PendingGoatClaimed(_recipient, _goatReward);
+        }
+    }
+
     function distributeReward() external {
         // check if sequencer pool is open
         if (!ISequencerPool(sequencerPool).open()) {
@@ -119,10 +140,7 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
             uint256[] memory _weightInPartner,
             uint256[] memory _totalWeight
         ) = _getPartnerWeight(_whitelist);
-        _distributeToPartner(
-            _whitelist,
-            _totalWeight
-        );
+        _distributeToPartner(_whitelist, _totalWeight);
         _distributeFee(_whitelist, _weightInPartner);
         _distributeToPool();
     }
@@ -145,15 +163,14 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
         uint256 _partnerBtcFee = _btcFee - _recipientBtcFee;
 
         if (_recipientGoatFee > 0) {
-            TransferHelper.safeTransferToken(
+            safeTransferToRecipient(
                 goat,
-                config.getContract(Constants.REWARD_RECIPIENT),
                 _recipientGoatFee
             );
         }
         if (_recipientBtcFee > 0) {
-            TransferHelper.safeTransferETH(
-                config.getContract(Constants.REWARD_RECIPIENT),
+            safeTransferToRecipient(
+                AddressLib.PLATFORM_TOKEN_ADDRESS,
                 _recipientBtcFee
             );
         }
@@ -297,7 +314,8 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
     ) internal {
         IGoatConfig.TokenContracts memory _tokenContracts = config
             .getTokenContracts(_token);
-        if (_token != goat && _token != AddressLib.PLATFORM_TOKEN_ADDRESS) {
+        address _btcb = config.getContract(Constants.BTCB_TOKEN);
+        if (_token != goat && _token != AddressLib.PLATFORM_TOKEN_ADDRESS && _token != _btcb) {
             _distributeToArtStakingRewardPool(
                 _tokenContracts.baseRewardPool,
                 goat,
@@ -337,7 +355,34 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
                 _goatAmount
             );
         }
+        if (_token == _btcb) {
+            if (_btcAmount > 0) {
+                if (config.isSwapEnabled()) {
+                    address _swap = config.getContract(Constants.SWAP);
+                    uint256 _btcbAmount = ISwap(_swap).swap{value: _btcAmount}(AddressLib.PLATFORM_TOKEN_ADDRESS, _btcb, _btcAmount);
+                    if (_btcbAmount > 0) {
+                        safeTransferRewards(
+                            IRewardReceiver(_tokenContracts.depositPool),
+                            _btcb,
+                            _btcbAmount
+                        );
+                    }
+                } else {
+                    _distributeToArtStakingRewardPool(
+                        _tokenContracts.baseRewardPool,
+                        AddressLib.PLATFORM_TOKEN_ADDRESS,
+                        _btcAmount
+                    );
+                }
+            }
+            _distributeToArtStakingRewardPool(
+                _tokenContracts.baseRewardPool,
+                goat,
+                _goatAmount
+            );
+        }
     }
+
 
     function _distributeToArtStakingRewardPool(
         address _pool,
@@ -351,8 +396,8 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
         uint256 _amountToPool = _amount - _extraToRecipient;
 
         if (_extraToRecipient > 0) {
-            address(_rewardToken).safeTransferToken(
-                config.getContract(Constants.REWARD_RECIPIENT),
+            safeTransferToRecipient(
+                _rewardToken,
                 _extraToRecipient
             );
         }
@@ -425,6 +470,7 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
             IERC20(_token).approve(address(_pool), _amount);
             _pool.addReward(_token, _amount);
         }
+        emit RewardDistributedToPool(address(_pool), _token, _amount);
         emit RewardDistributed(address(_pool), address(0), _token, _amount);
     }
 
@@ -443,7 +489,21 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
             IERC20(_token).approve(rewardPool, _amount);
             IRewardPool(rewardPool).addReward(_user, _token, _amount);
         }
-        emit RewardDistributed(rewardPool, sequencerPool, _token, _amount);
+        emit RewardDistributedToPartner(_user, _token, _amount);
+        emit RewardDistributed(rewardPool, _user, _token, _amount);
+    }
+
+    function safeTransferToRecipient(
+        address _token,
+        uint256 _amount
+    ) internal {
+        address _reward_recipient = config.getContract(Constants.REWARD_RECIPIENT);
+        TransferHelper.safeTransferToken(_token, _reward_recipient, _amount);
+        emit RewardDistributedToRecipient(
+            _reward_recipient,
+            _token,
+            _amount
+        );
     }
 
     receive() external payable {}

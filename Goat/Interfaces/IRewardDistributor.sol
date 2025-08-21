@@ -23,6 +23,22 @@ interface IRewardDistributor {
         address _token,
         uint256 _amount
     );
+    event RewardDistributedToRecipient(
+        address indexed _recipient,
+        address indexed _token,
+        uint256 _amount
+    );
+    event RewardDistributedToPartner(
+        address indexed _partner,
+        address indexed _token,
+        uint256 _amount
+    );
+    event RewardDistributedToPool(
+        address indexed _pool,
+        address indexed _token,
+        uint256 _amount
+    );
+    event PendingGoatClaimed(address indexed _user, uint256 _amount);
 
     function initialize(
         address _owner,
@@ -37,4 +53,6 @@ interface IRewardDistributor {
     ) external;
 
     function distributeReward() external;
+
+    function claimPendingReward(address _recipient) external;
 }

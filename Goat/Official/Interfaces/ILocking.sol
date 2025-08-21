@@ -2,6 +2,35 @@
 pragma solidity 0.8.17;
 
 interface ILocking {
+    error ConsensusReentrantCall(uint64);
+    error NotConsensusLayer();
+
+    error NotValidatorOwner(address expected);
+    error UnapprovedValidator(address validator);
+    error DuplicateValidator(address validator);
+
+    error InvalidZeroAddress();
+    error InvalidZeroAmount();
+    error NotStandardLockingToken();
+
+    error LockingNotStarted();
+    error SignatureMismatch();
+    error TokenNotFound(address token);
+    error TokenExists();
+    error InvalidTokenWeight();
+    error InvalidTokenLimit(uint256 limit, uint256 threshold);
+    error InvalidTokenListSize();
+    error InvalidMsgValue(uint256 expect);
+
+    error BelowThreshold(address token, uint256 min);
+    error LockAmountExceed(address token, uint256 limit);
+
+    error NoUnclaimed();
+    error ClaimNotOpen();
+    error ClaimOpened();
+    error Approved();
+    error NoChanges();
+
     struct Locking {
         address token;
         uint256 amount;
@@ -18,10 +47,10 @@ interface ILocking {
     event UpdateTokenWeight(address token, uint64 weight);
     event UpdateTokenLimit(address token, uint256 limit);
     event Grant(uint256 amount);
-    event OpenCliam();
+    event Approval(address validator);
+    event OpenClaim();
 
     event Create(address validator, address owner, bytes32[2] pubkey);
-
     event Lock(address validator, address token, uint256 amount);
     event Unlock(
         uint64 id,
@@ -75,6 +104,8 @@ interface ILocking {
 
     function grant(uint256 amount) external;
 
+    function approve(address validator) external;
+
     function addToken(
         address token,
         uint64 weight,
@@ -91,6 +122,12 @@ interface ILocking {
     function getAddressByPubkey(
         bytes32[2] calldata pubkey
     ) external pure returns (address, address);
+
+    function reclaim() external;
+
+    function openClaim() external;
+
+    function changeValidatorOwner(address validator, address newOwner) external;
 
     function tokens(address _token) external view returns (bool, uint64, uint256, uint256);
 

@@ -52,5 +52,6 @@ interface IWithdrawalManager {
         uint256 artAmount;
         uint256 expectedAmount;
         uint256 startTime;
+        uint256 maturityTime;
     }
 }
