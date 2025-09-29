@@ -83,7 +83,7 @@ contract Swap is ISwap, AccessControlUpgradeable {
             IERC20(from).safeTransferFrom(msg.sender, address(this), _amount);
             // Approve the Permit2 contract to spend the tokens
             IERC20(from).approve(address(permit2), _amount);
-            permit2.approve(from, address(universalRouter), uint160(_amount), uint48(block.timestamp + 3000));
+            permit2.approve(from, address(universalRouter), uint160(_amount), uint48(block.timestamp));
             payerIsUser = true;
         } else {
             require(msg.value == _amount, "Swap: INVALID_AMOUNT");
@@ -100,7 +100,7 @@ contract Swap is ISwap, AccessControlUpgradeable {
         );
 
         uint256 _tokenBalanceBefore = address(to).balanceOf(address(this));
-        universalRouter.execute{value: _ethAmount}(router.commands, inputs, block.timestamp + 3000);
+        universalRouter.execute{value: _ethAmount}(router.commands, inputs, block.timestamp);
         uint256 swappedAmount = address(to).balanceOf(address(this)) - _tokenBalanceBefore;
 
         // send back the swapped tokens to the caller
@@ -109,4 +109,6 @@ contract Swap is ISwap, AccessControlUpgradeable {
         emit Swapped(from, to, _amount, swappedAmount);
         return swappedAmount;
     }
+
+    receive() external payable {}
 }
