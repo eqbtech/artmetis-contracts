@@ -123,7 +123,7 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
         }
     }
 
-    function distributeReward() external onlyDepositPoolOrAdmin {
+    function distributeReward() external onlyAdmin {
         // check if sequencer pool is open
         if (!ISequencerPool(sequencerPool).open()) {
             return;
@@ -506,11 +506,10 @@ contract RewardDistributor is IRewardDistributor, AccessControlUpgradeable {
         );
     }
 
-    modifier onlyDepositPoolOrAdmin() {
+    modifier onlyAdmin() {
         require(
-            config.isDepositPool(msg.sender) ||
-                IAccessControlUpgradeable(address(config)).hasRole(Constants.DISTRIBUTE_ROLE, msg.sender),
-            "Distributor: only deposit pool or distributor"
+            IAccessControlUpgradeable(address(config)).hasRole(Constants.DISTRIBUTE_ROLE, msg.sender),
+            "Distributor: only distributor admin"
         );
         _;
     }

@@ -68,7 +68,6 @@ contract DepositPool is
         external
         payable
         validSequencerPool(_pool)
-        harvest(_pool)
         returns (uint256)
     {
         require(_amount > 0, "DepositPool: INVALID_AMOUNT");
@@ -103,7 +102,7 @@ contract DepositPool is
     function partnerDeposit(
         address _pool,
         uint256 _amount
-    ) external payable validSequencerPool(_pool) harvest(_pool) {
+    ) external payable validSequencerPool(_pool) {
         require(_amount > 0, "DepositPool: INVALID_AMOUNT");
         if (AddressLib.isPlatformToken(token)) {
             require(msg.value == _amount, "DepositPool: INVALID_AMOUNT");
@@ -137,7 +136,7 @@ contract DepositPool is
     function partnerWithdraw(
         address _pool,
         uint256 _amount
-    ) external validSequencerPool(_pool) harvest(_pool) {
+    ) external validSequencerPool(_pool) {
         require(_amount > 0, "DepositPool: INVALID_AMOUNT");
         ISequencerPool(_pool).unlock(msg.sender, token, _amount, true);
     }
@@ -150,7 +149,6 @@ contract DepositPool is
         external
         onlyWithdrawalManager
         validSequencerPool(_pool)
-        harvest(_pool)
         returns (uint256)
     {
         require(_artAmount > 0, "AMTDepositPool: invalid amount");
@@ -191,12 +189,6 @@ contract DepositPool is
             ISequencerPoolManager(_sequencerPoolManager).isValidPool(_pool),
             "DepositPool: INVALID_SEQUENCER_POOL"
         );
-        _;
-    }
-
-    modifier harvest(address _pool) {
-        IRewardDistributor(ISequencerPool(_pool).distributor())
-            .distributeReward();
         _;
     }
 }
