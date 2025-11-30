@@ -23,7 +23,30 @@ interface IRewardDistributor {
         address _token,
         uint256 _amount
     );
+    event RewardDistributedToRecipient(
+        address indexed _recipient,
+        address indexed _token,
+        uint256 _amount,
+        bool _fee
+    );
+    event RewardDistributedToPartner(
+        address indexed _partner,
+        address indexed _token,
+        uint256 _amount
+    );
+    event RewardDistributedToPool(
+        address indexed _pool,
+        address indexed _token,
+        uint256 _amount
+    );
     event PendingGoatClaimed(address indexed _user, uint256 _amount);
+    event RewardDistributedByToken(
+        address indexed _deposit_token,
+        address _depositPool,
+        address _baseRewardPool,
+        uint256 _btcAmount,
+        uint256 _goatAmount
+    );
 
     function initialize(
         address _owner,

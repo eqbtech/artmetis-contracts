@@ -18,6 +18,7 @@ contract GoatConfig is IGoatConfig, AccessControlUpgradeable {
     EnumerableSet.AddressSet private supportedTokens;
     mapping(address => TokenContracts) public tokenContracts;
     mapping(address => uint256) public tokenRewardWeights;
+    bool private swapEnabled;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -159,5 +160,16 @@ contract GoatConfig is IGoatConfig, AccessControlUpgradeable {
 
     function isDistributor(address _distributor) external view returns (bool) {
         return distributors.contains(_distributor);
+    }
+
+    function setSwapEnabled(
+        bool _swapEnabled
+    ) external onlyRole(Constants.ADMIN_ROLE) {
+        swapEnabled = _swapEnabled;
+        emit SwapEnabledSet(_swapEnabled);
+    }
+
+    function isSwapEnabled() external view override returns (bool) {
+        return swapEnabled;
     }
 }
