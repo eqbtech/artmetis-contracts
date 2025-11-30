@@ -4,12 +4,16 @@ pragma solidity 0.8.17;
 library Constants {
     // Roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant DISTRIBUTE_ROLE = keccak256("DISTRIBUTE_ROLE");
 
     // address
     bytes32 public constant REWARD_RECIPIENT = keccak256("REWARD_RECIPIENT");
+    bytes32 public constant SWAP =
+        keccak256("SWAP");
 
     // Contracts
     bytes32 public constant GOAT_TOKEN = keccak256("GOAT_TOKEN");
+    bytes32 public constant BTCB_TOKEN = keccak256("BTCB_TOKEN");
 
     bytes32 public constant REWARD_POOL = keccak256("REWARD_POOL");
     bytes32 public constant WITHDRAWAL_RECIPIENT =
