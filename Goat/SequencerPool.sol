@@ -11,6 +11,7 @@ import "./Official/Utils/Pubkey.sol";
 import "./Utils/Constants.sol";
 import "./Interfaces/IGoatConfig.sol";
 import "./GoatAccessController.sol";
+import {ILockingDelegate} from "./Official/Interfaces/ILockingDelegate.sol";
 
 contract SequencerPool is
     GoatAccessController,
@@ -33,6 +34,7 @@ contract SequencerPool is
     mapping(address => mapping(address => uint256)) public userLocked;
 
     bool public open;
+    ILockingDelegate public lockingDelegator;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -41,10 +43,10 @@ contract SequencerPool is
 
     function initialize(
         address _owner,
-        address _locking,
+        address _lockingDelegator,
         address _config
     ) public initializer {
-        require(_locking != address(0), "SequencerPool: INVALID_LOCKING");
+        require(_lockingDelegator != address(0), "SequencerPool: INVALID_LOCKING");
         require(_config != address(0), "SequencerPool: INVALID_CONFIG");
 
         __AccessControl_init();
@@ -55,7 +57,9 @@ contract SequencerPool is
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(Constants.ADMIN_ROLE, msg.sender);
 
-        locking = ILocking(_locking);
+        lockingDelegator = ILockingDelegate(_lockingDelegator);
+        ILocking _locking = lockingDelegator.underlying();
+        locking = _locking;
 
         address _withdrawalRecipient = config.getContract(
             Constants.WITHDRAWAL_RECIPIENT
@@ -67,7 +71,7 @@ contract SequencerPool is
 
         withdrawalRecipient = _withdrawalRecipient;
 
-        emit InitializedSet(_locking, _config, _withdrawalRecipient);
+        emit InitializedSet(_lockingDelegator, address(_locking), _config, _withdrawalRecipient);
     }
 
     function setDistributor(
@@ -75,6 +79,32 @@ contract SequencerPool is
     ) external onlyRole(Constants.ADMIN_ROLE) {
         distributor = _distributor;
         emit DistributorSet(_distributor);
+    }
+
+    function setLockingDelegate(
+        address _lockingDelegate
+    ) public onlyRole(Constants.ADMIN_ROLE) {
+        require(
+            _lockingDelegate != address(0),
+            "SequencerPool: INVALID_LOCKING_DELEGATE"
+        );
+        lockingDelegator = ILockingDelegate(_lockingDelegate);
+        emit LockingDelegateSet(_lockingDelegate);
+    }
+
+    function migrateValidator(
+        address _validatorEntry
+    ) public onlyRole(Constants.ADMIN_ROLE) {
+        require(validator != address(0), "SequencerPool: NO_VALIDATOR");
+        require(
+            _validatorEntry != address(0),
+            "SequencerPool: INVALID_VALIDATOR_OWNER"
+        );
+        locking.changeValidatorOwner(validator, _validatorEntry);
+        require(whitelist.length() == 1, "SequencerPool: partner not uniq");
+        address _partner = whitelist.at(0);
+        whitelist.remove(_partner);
+        lockingDelegator.migrate(validator, _partner, distributor, address(this));
     }
 
     function addWhitelist(address _user) public onlyRole(Constants.ADMIN_ROLE) {
@@ -218,12 +248,12 @@ contract SequencerPool is
             return;
         }
         if (_token != address(0)) {
-            IERC20(_token).approve(address(locking), 0);
-            IERC20(_token).approve(address(locking), _balance);
+            IERC20(_token).approve(address(lockingDelegator), 0);
+            IERC20(_token).approve(address(lockingDelegator), _balance);
         }
         ILocking.Locking[] memory _locking = new ILocking.Locking[](1);
         _locking[0] = ILocking.Locking(_token, _balance);
-        locking.lock{value: _eth}(validator, _locking);
+        lockingDelegator.delegate{value: _eth}(validator, _locking);
     }
 
     function _canLock(
@@ -282,7 +312,7 @@ contract SequencerPool is
         }
         ILocking.Locking[] memory _locking = new ILocking.Locking[](1);
         _locking[0] = ILocking.Locking(_token, _amount);
-        locking.unlock(validator, _recipient, _locking);
+        lockingDelegator.undelegate(validator, _recipient, _locking);
     }
 
     function claim() external {
@@ -290,7 +320,7 @@ contract SequencerPool is
             return;
         }
         require(distributor != address(0), "SequencerPool: NO_DISTRIBUTOR");
-        locking.claim(validator, distributor);
+        lockingDelegator.claimRewards(validator);
         emit Claimed(msg.sender, validator, distributor);
     }
 
