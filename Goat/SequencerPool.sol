@@ -92,14 +92,26 @@ contract SequencerPool is
         emit LockingDelegateSet(_lockingDelegate);
     }
 
-    function migrateValidator() public onlyRole(Constants.ADMIN_ROLE) {
+    function migrateValidator(
+        uint256 operatorNativeAllowance,
+        uint256 operatorTokenAllowance,
+        uint256 allowanceUpdatePeriod
+    ) public onlyRole(Constants.ADMIN_ROLE) {
         require(validator != address(0), "SequencerPool: NO_VALIDATOR");
         require(address(lockingDelegator) != address(0), "SequencerPool: INVALID_LOCKING_DELEGATOR");
         locking.changeValidatorOwner(validator, address(lockingDelegator));
         require(whitelist.length() == 1, "SequencerPool: partner not uniq");
         address _partner = whitelist.at(0);
         whitelist.remove(_partner);
-        lockingDelegator.migrate(validator, _partner, distributor, address(this));
+        lockingDelegator.migrate(
+            validator,
+            _partner,
+            distributor,
+            address(this),
+            operatorNativeAllowance,
+            operatorTokenAllowance,
+            allowanceUpdatePeriod
+        );
     }
 
     function addWhitelist(address _user) public onlyRole(Constants.ADMIN_ROLE) {

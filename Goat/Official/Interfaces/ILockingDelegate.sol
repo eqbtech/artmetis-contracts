@@ -23,6 +23,9 @@ interface ILockingDelegate {
         address validator,
         address operator,
         address funderPayee,
-        address funder
+        address funder,
+        uint256 operatorNativeAllowance,
+        uint256 operatorTokenAllowance,
+        uint256 allowanceUpdatePeriod
     ) external;
 }
