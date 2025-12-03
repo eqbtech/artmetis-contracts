@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
+
+interface IIncentivePool {
+    function distributeReward(
+        address funderPayee,
+        address foundation,
+        address operatorPayee,
+        uint256 foundationNativeRate,
+        uint256 foundationGoatRate,
+        uint256 operatorNativeRate,
+        uint256 operatorGoatRate
+    ) external;
+
+    function withdrawFoundationCommission(address to) external;
+
+    function withdrawOperatorCommission(address to) external;
+}

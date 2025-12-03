@@ -5,6 +5,7 @@ import {ILocking} from "../Official/Interfaces/ILocking.sol";
 
 interface ISequencerPool {
     event InitializedSet(
+        address _lockingDelegator,
         address _locking,
         address _config,
         address _withdrawalRecipient
@@ -37,10 +38,11 @@ interface ISequencerPool {
         address _validator,
         address _distributor
     );
+    event LockingDelegateSet(address indexed _lockingDelegate);
 
     function initialize(
         address _owner,
-        address _locking,
+        address _lockingDelegator,
         address _config
     ) external;
 

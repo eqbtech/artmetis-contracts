@@ -11,6 +11,7 @@ interface ISequencerPoolManager {
     event PoolCreated(address indexed _pool, address indexed _distributor);
     event PoolAdded(address indexed _pool);
     event PoolRemoved(address indexed _pool);
+    event LockingDelegatorSet(address indexed _lockingDelegator);
 
     function createPool(
         uint256 _feeRate,

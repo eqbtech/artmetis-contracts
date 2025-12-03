@@ -9,6 +9,7 @@ import "./Interfaces/ISequencerPool.sol";
 import "./Interfaces/IRewardDistributor.sol";
 import "./Utils/Constants.sol";
 import "./Interfaces/IGoatConfig.sol";
+import {ILockingDelegate} from "./Official/Interfaces/ILockingDelegate.sol";
 
 contract SequencerPoolManager is
     ISequencerPoolManager,
@@ -21,6 +22,7 @@ contract SequencerPoolManager is
     address public sequencerPoolBeaconProxy;
     address public distributorBeaconProxy;
     EnumerableSet.AddressSet private pools;
+    address public lockingDelegator;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -65,6 +67,20 @@ contract SequencerPoolManager is
         );
     }
 
+    function setLockingDelegator(address _lockingDelegator) external onlyRole(Constants.ADMIN_ROLE) {
+        require(
+            _lockingDelegator != address(0),
+            "SequencerPoolManager: INVALID_LOCKING_DELEGATOR"
+        );
+        ILocking _locking = ILockingDelegate(_lockingDelegator).underlying();
+        require(
+            address(_locking) == locking,
+            "SequencerPoolManager: INVALID_HAS_NO_LOCKING"
+        );
+        lockingDelegator = _lockingDelegator;
+        emit LockingDelegatorSet(_lockingDelegator);
+    }
+
     function createPool(
         uint256 _feeRate,
         uint256 _feeShare,
@@ -75,7 +91,7 @@ contract SequencerPoolManager is
             abi.encodeWithSelector(
                 ISequencerPool.initialize.selector,
                 msg.sender,
-                locking,
+                lockingDelegator,
                 config
             )
         );
