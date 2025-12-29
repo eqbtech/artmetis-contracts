@@ -28,4 +28,14 @@ interface ILockingDelegate {
         uint256 operatorTokenAllowance,
         uint256 allowanceUpdatePeriod
     ) external;
+
+    function migrateTo(
+        address validator,
+        address newOwner
+    ) external;
+
+    function setFunderPayee(
+        address validator,
+        address funderPayee
+    ) external;
 }

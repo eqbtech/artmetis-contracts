@@ -112,6 +112,17 @@ contract SequencerPool is
             operatorTokenAllowance,
             allowanceUpdatePeriod
         );
+        emit WhitelistRemoved(_partner);
+    }
+
+    function migrateOwner(address newOwner) public onlyRole(Constants.ADMIN_ROLE) {
+        require(newOwner != address(0), "SequencerPool: INVALID_NEW_OWNER");
+        lockingDelegator.migrateTo(validator, newOwner);
+    }
+
+    function setFunderPayee(address funderPayee) public onlyRole(Constants.ADMIN_ROLE) {
+        require(funderPayee != address(0), "SequencerPool: INVALID_FUNDER_PAYEE");
+        lockingDelegator.setFunderPayee(validator, funderPayee);
     }
 
     function addWhitelist(address _user) public onlyRole(Constants.ADMIN_ROLE) {
