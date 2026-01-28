@@ -21,9 +21,9 @@ interface ILockingDelegate {
 
     function migrate(
         address validator,
-        address operator,
-        address funderPayee,
         address funder,
+        address funderPayee,
+        address operator,
         uint256 operatorNativeAllowance,
         uint256 operatorTokenAllowance,
         uint256 allowanceUpdatePeriod
@@ -38,4 +38,6 @@ interface ILockingDelegate {
         address validator,
         address funderPayee
     ) external;
+
+    function registerMigration(address validator) external;
 }
