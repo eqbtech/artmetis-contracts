@@ -132,4 +132,6 @@ interface ILocking {
     function tokens(address _token) external view returns (bool, uint64, uint256, uint256);
 
     function locking(address _validator, address _token) external view returns (uint256);
+
+    function owners(address _validator) external view returns (address);
 }
