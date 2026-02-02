@@ -39,6 +39,7 @@ interface ISequencerPool {
         address _distributor
     );
     event LockingDelegateSet(address indexed _lockingDelegate);
+    event ValidatorSet(address indexed _validator);
 
     function initialize(
         address _owner,
