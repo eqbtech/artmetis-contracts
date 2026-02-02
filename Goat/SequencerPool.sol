@@ -92,6 +92,8 @@ contract SequencerPool is
         emit LockingDelegateSet(_lockingDelegate);
     }
 
+    // function use to set validator directly, sequencer pool works with lockingDelegator
+    // the old sequencer pool need to call migrateValidator first, the new sequencer pool need to call setValidator
     function setValidator(
         address _validator
     ) public onlyRole(Constants.ADMIN_ROLE) {
@@ -102,6 +104,10 @@ contract SequencerPool is
         require(
             validator == address(0),
             "SequencerPool: ALREADY_SET_VALIDATOR"
+        );
+        require(
+            locking.owners(_validator) == address(lockingDelegator),
+            "SequencerPool: VALIDATOR_OWNER_NOT_DELEGATOR"
         );
         validator = _validator;
         open = true;
